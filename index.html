@@ -51,6 +51,7 @@ button{
   color:white;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
 }
 
 #jump{ background:#34a853; }
@@ -85,8 +86,12 @@ function resize(){
 resize();
 window.addEventListener("resize", resize);
 
+// ✅ Sol recalculé dynamiquement (corrige le "rien ne se passe" sur mobile)
+function groundY(){
+  return H * 0.75;
+}
+
 // --- GAME VARIABLES ---
-const GROUND = H * 0.75;
 let gameTime = 0;
 let speed = 200;
 let speedMult = 1;
@@ -95,7 +100,7 @@ let score = 0;
 // --- PLAYER ---
 const player = {
   x: 80,
-  y: GROUND - 60,
+  y: groundY() - 60,
   w: 40,
   h: 60,
   vy: 0,
@@ -108,7 +113,7 @@ const player = {
 const obstacles = [];
 const rolls = [];
 
-// --- CONTROLS ---
+// --- CONTROLS (ultra réactif mobile) ---
 function fastPress(btn, fn){
   btn.addEventListener("pointerdown", e => { e.preventDefault(); fn(); }, {passive:false});
   btn.addEventListener("touchstart", e => { e.preventDefault(); fn(); }, {passive:false});
@@ -135,7 +140,7 @@ let spawnTimer = 1.8;
 function spawnObstacle(){
   obstacles.push({
     x: W,
-    y: GROUND - 30,
+    y: groundY() - 30,
     w: 30,
     h: 30
   });
@@ -143,7 +148,7 @@ function spawnObstacle(){
   if(Math.random() < 0.6){
     rolls.push({
       x: W + 150,
-      y: GROUND - 120,
+      y: groundY() - 120,
       w: 30,
       h: 30
     });
@@ -154,7 +159,7 @@ function spawnObstacle(){
 function update(dt){
   gameTime += dt;
 
-  // difficulty progression
+  // difficulty progression (démarre facile, monte progressivement)
   speedMult = 1 + gameTime * 0.05;
   speed = 200 * speedMult;
   document.getElementById("speed").textContent = "Vitesse: " + speedMult.toFixed(1) + "x";
@@ -163,8 +168,8 @@ function update(dt){
   player.vy += 2200 * dt;
   player.y += player.vy * dt;
 
-  if(player.y >= GROUND - player.h){
-    player.y = GROUND - player.h;
+  if(player.y >= groundY() - player.h){
+    player.y = groundY() - player.h;
     player.vy = 0;
     player.onGround = true;
   }
@@ -174,7 +179,7 @@ function update(dt){
     if(player.slideTime <= 0) player.sliding = false;
   }
 
-  // spawn
+  // spawn (plus lent au début, plus rapide ensuite)
   spawnTimer -= dt;
   if(spawnTimer <= 0){
     spawnObstacle();
@@ -188,8 +193,8 @@ function update(dt){
   obstacles.forEach(o=>{
     if(o.x < player.x + player.w &&
        o.x + o.w > player.x &&
-       o.y < player.y + player.h &&
-       o.y + o.h > player.y){
+       o.y < player.y + (player.sliding ? 30 : player.h) &&
+       o.y + o.h > (player.sliding ? groundY()-30 : player.y)){
       alert("Perdu !");
       location.reload();
     }
@@ -198,8 +203,8 @@ function update(dt){
   rolls.forEach((r,i)=>{
     if(r.x < player.x + player.w &&
        r.x + r.w > player.x &&
-       r.y < player.y + player.h &&
-       r.y + r.h > player.y){
+       r.y < player.y + (player.sliding ? 30 : player.h) &&
+       r.y + r.h > (player.sliding ? groundY()-30 : player.y)){
       rolls.splice(i,1);
       score++;
       document.getElementById("score").textContent = "Rouleaux: " + score;
@@ -211,15 +216,22 @@ function update(dt){
 function draw(){
   ctx.clearRect(0,0,W,H);
 
+  // background sky
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,"#6ec6ff");
+  grad.addColorStop(1,"#dff6ff");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
   // ground
   ctx.fillStyle="#4caf50";
-  ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.fillRect(0, groundY(), W, H - groundY());
 
-  // player
+  // player (un seul bonhomme)
   ctx.fillStyle="#1e88e5";
   ctx.fillRect(
     player.x,
-    player.sliding ? GROUND-30 : player.y,
+    player.sliding ? groundY()-30 : player.y,
     player.w,
     player.sliding ? 30 : player.h
   );
@@ -238,12 +250,19 @@ let last = performance.now();
 function loop(now){
   const dt = Math.min((now-last)/1000,0.033);
   last = now;
+
   update(dt);
   draw();
   requestAnimationFrame(loop);
 }
 
+// ✅ sécurité : remet le joueur au bon endroit si la taille change
+window.addEventListener("resize", ()=>{
+  player.y = Math.min(player.y, groundY() - player.h);
+});
+
 requestAnimationFrame(loop);
 </script>
 </body>
 </html>
+```0
