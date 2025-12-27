@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <title>Runner Papier Toilette</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-
 <style>
 html,body{
   margin:0;
@@ -14,7 +13,6 @@ html,body{
   background:#87CEEB;
   touch-action: manipulation;
 }
-
 #hud{
   position:absolute;
   top:10px;
@@ -25,24 +23,20 @@ html,body{
   z-index:10;
   font-weight:bold;
 }
-
 .hud-box{
   background:rgba(255,255,255,0.75);
   padding:6px 12px;
   border-radius:14px;
 }
-
 canvas{
   display:block;
   width:100%;
   height:80vh;
 }
-
 #controls{
   height:20vh;
   display:flex;
 }
-
 button{
   flex:1;
   font-size:26px;
@@ -52,7 +46,6 @@ button{
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
-
 #jump{ background:#34a853; }
 #slide{ background:#f29900; }
 button:active{ filter:brightness(0.9); }
@@ -60,7 +53,6 @@ button:active{ filter:brightness(0.9); }
 </head>
 
 <body>
-
 <div id="hud">
   <div class="hud-box" id="score">Rouleaux: 0</div>
   <div class="hud-box" id="speed">Vitesse: 1.0x</div>
@@ -85,6 +77,7 @@ function resize(){
 resize();
 window.addEventListener("resize", resize);
 
+// Sol dynamique (fix mobile)
 function groundY(){ return H * 0.75; }
 
 // --- GAME ---
@@ -96,9 +89,9 @@ let score = 0;
 // --- PLAYER ---
 const player = {
   x: 80,
-  y: groundY() - 60,
-  w: 40,
-  h: 60,
+  y: groundY() - 70,
+  w: 44,
+  h: 70,
   vy: 0,
   onGround: true,
   sliding: false,
@@ -109,7 +102,7 @@ const player = {
 const obstacles = [];
 const rolls = [];
 
-// --- CONTROLS ---
+// --- CONTROLS ultra réactifs ---
 function fastPress(btn, fn){
   btn.addEventListener("pointerdown", e => { e.preventDefault(); fn(); }, {passive:false});
   btn.addEventListener("touchstart", e => { e.preventDefault(); fn(); }, {passive:false});
@@ -117,7 +110,7 @@ function fastPress(btn, fn){
 
 fastPress(document.getElementById("jump"), ()=>{
   if(player.onGround){
-    player.vy = -900;
+    player.vy = -980;
     player.onGround = false;
     player.sliding = false;
   }
@@ -126,27 +119,31 @@ fastPress(document.getElementById("jump"), ()=>{
 fastPress(document.getElementById("slide"), ()=>{
   if(player.onGround && !player.sliding){
     player.sliding = true;
-    player.slideTime = 0.5;
+    player.slideTime = 0.55;
   }
 });
 
 // --- SPAWN ---
-let spawnTimer = 1.8;
+let spawnTimer = 2.0;
 function spawnObstacle(){
-  obstacles.push({ x:W, y:groundY()-30, w:30, h:30 });
-  if(Math.random()<0.6){
-    rolls.push({ x:W+150, y:groundY()-120, w:30, h:30 });
+  obstacles.push({ x:W, y:groundY()-34, w:34, h:34 });
+
+  if(Math.random() < 0.65){
+    rolls.push({ x:W+160, y:groundY()-130, w:34, h:34 });
   }
 }
 
 // --- UPDATE ---
 function update(dt){
   gameTime += dt;
-  speedMult = 1 + gameTime * 0.05;
-  speed = 200 * speedMult;
+
+  // difficulté progressive (début plus facile)
+  speedMult = 1 + gameTime * 0.04;
+  speed = 190 * speedMult;
   document.getElementById("speed").textContent = "Vitesse: " + speedMult.toFixed(1) + "x";
 
-  player.vy += 2200 * dt;
+  // physique
+  player.vy += 2350 * dt;
   player.y += player.vy * dt;
 
   if(player.y >= groundY() - player.h){
@@ -157,33 +154,38 @@ function update(dt){
 
   if(player.sliding){
     player.slideTime -= dt;
-    if(player.slideTime<=0) player.sliding=false;
+    if(player.slideTime <= 0) player.sliding = false;
   }
 
+  // spawn progressif
   spawnTimer -= dt;
-  if(spawnTimer<=0){
+  if(spawnTimer <= 0){
     spawnObstacle();
-    spawnTimer = Math.max(0.8, 1.8 - gameTime * 0.05);
+    spawnTimer = Math.max(0.85, 2.0 - gameTime * 0.05);
   }
 
-  obstacles.forEach(o=>o.x -= speed*dt);
-  rolls.forEach(r=>r.x -= speed*dt);
+  obstacles.forEach(o => o.x -= speed * dt);
+  rolls.forEach(r => r.x -= speed * dt);
+
+  // collisions (hitbox adaptée au slide)
+  const pTop = player.sliding ? (groundY() - 34) : player.y;
+  const pH   = player.sliding ? 34 : player.h;
 
   obstacles.forEach(o=>{
-    if(o.x < player.x+player.w &&
-       o.x+o.w > player.x &&
-       o.y < player.y + (player.sliding?30:player.h) &&
-       o.y+o.h > (player.sliding?groundY()-30:player.y)){
+    if(o.x < player.x + player.w &&
+       o.x + o.w > player.x &&
+       o.y < pTop + pH &&
+       o.y + o.h > pTop){
       alert("Perdu !");
       location.reload();
     }
   });
 
   rolls.forEach((r,i)=>{
-    if(r.x < player.x+player.w &&
-       r.x+r.w > player.x &&
-       r.y < player.y+player.h &&
-       r.y+r.h > player.y){
+    if(r.x < player.x + player.w &&
+       r.x + r.w > player.x &&
+       r.y < player.y + player.h &&
+       r.y + r.h > player.y){
       rolls.splice(i,1);
       score++;
       document.getElementById("score").textContent = "Rouleaux: " + score;
@@ -195,58 +197,159 @@ function update(dt){
 function draw(){
   ctx.clearRect(0,0,W,H);
 
+  // ciel
   const sky = ctx.createLinearGradient(0,0,0,H);
   sky.addColorStop(0,"#6ec6ff");
   sky.addColorStop(1,"#eaf8ff");
-  ctx.fillStyle=sky;
+  ctx.fillStyle = sky;
   ctx.fillRect(0,0,W,H);
 
-  ctx.fillStyle="#49c880";
-  ctx.fillRect(0,groundY(),W,H-groundY());
+  // nuages simples
+  drawCloud(W*0.15, H*0.12, 1.0);
+  drawCloud(W*0.55, H*0.18, 1.25);
+  drawCloud(W*0.82, H*0.10, 0.9);
 
+  // sol
+  ctx.fillStyle="#49c880";
+  ctx.fillRect(0, groundY(), W, H - groundY());
+
+  // entités
   obstacles.forEach(o=>drawPoop(o.x,o.y,o.w,o.h));
   rolls.forEach(r=>drawRoll(r.x,r.y,r.w,r.h));
 
-  drawRunner(player.x, player.sliding?groundY()-48:player.y, player.sliding);
+  // joueur
+  drawRunner(
+    player.x,
+    player.sliding ? (groundY()-34) : player.y,
+    player.sliding
+  );
 }
 
 // --- DRAW HELPERS ---
-function drawRunner(x,y,sliding){
-  ctx.save(); ctx.translate(x,y);
-  const h=sliding?48:60,w=sliding?56:40;
-  const t=performance.now()/120;
-  ctx.fillStyle="#1e88e5";
-  roundRect(8,18,w-16,h-22,10,true);
-  ctx.fillStyle="#ffe0bd";
-  ctx.beginPath(); ctx.arc(w/2,14,10,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle="rgba(0,0,0,.6)";
-  ctx.lineWidth=3;
+function drawRunner(x, y, sliding){
+  ctx.save();
+  ctx.translate(x, y);
+
+  const now = performance.now();
+  const step = Math.sin(now/110) * (sliding ? 1 : 6);
+
+  // tailles
+  const bodyW = sliding ? 58 : 44;
+  const bodyH = sliding ? 34 : 70;
+
+  // ombre
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.ellipse(bodyW/2, bodyH+10, 22, 7, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // jambes
+  ctx.strokeStyle = "rgba(20,20,20,.75)";
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
   if(!sliding){
-    ctx.beginPath(); ctx.moveTo(14,h-8); ctx.lineTo(10-Math.sin(t)*6,h+8); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(26,h-8); ctx.show?null:ctx.lineTo(30+Math.sin(t)*6,h+8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(16, bodyH-6); ctx.lineTo(10-step, bodyH+10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(28, bodyH-6); ctx.lineTo(34+step, bodyH+10); ctx.stroke();
+  } else {
+    // en slide : petite ligne "jambe"
+    ctx.beginPath(); ctx.moveTo(16, bodyH-2); ctx.lineTo(40, bodyH-2); ctx.stroke();
   }
+
+  // corps (t-shirt)
+  ctx.fillStyle = "#1e88e5";
+  roundRect(10, 24, bodyW-20, bodyH-30, 12, true);
+
+  // tête (plus grande et visible)
+  ctx.fillStyle = "#ffe0bd";
+  ctx.beginPath();
+  ctx.arc(bodyW/2, 16, 12, 0, Math.PI*2);
+  ctx.fill();
+
+  // cheveux
+  ctx.fillStyle = "rgba(35,35,35,.9)";
+  ctx.beginPath();
+  ctx.arc(bodyW/2, 15, 12, Math.PI, 0);
+  ctx.fill();
+
+  // yeux
+  ctx.fillStyle = "rgba(0,0,0,.7)";
+  ctx.beginPath(); ctx.arc(bodyW/2 - 5, 16, 1.7, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(bodyW/2 + 5, 16, 1.7, 0, Math.PI*2); ctx.fill();
+
+  // bouche
+  ctx.strokeStyle = "rgba(0,0,0,.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(bodyW/2, 20, 5, 0.1*Math.PI, 0.9*Math.PI);
+  ctx.stroke();
+
+  // bras
+  if(!sliding){
+    const arm = Math.cos(now/120) * 5;
+    ctx.strokeStyle = "rgba(20,20,20,.75)";
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(12, 34); ctx.lineTo(8-arm, 46); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bodyW-12, 34); ctx.lineTo(bodyW-8+arm, 46); ctx.stroke();
+  }
+
   ctx.restore();
 }
 
 function drawPoop(x,y,w,h){
   ctx.save(); ctx.translate(x,y);
   ctx.fillStyle="#7a4a21";
-  roundRect(0,h*0.45,w,h*0.55,10,true);
-  roundRect(w*0.15,h*0.2,w*0.7,h*0.35,10,true);
-  roundRect(w*0.3,0,w*0.4,h*0.25,10,true);
+  // base
+  roundRect(0, h*0.45, w, h*0.55, 10, true);
+  // mid
+  roundRect(w*0.14, h*0.2, w*0.72, h*0.35, 10, true);
+  // top
+  roundRect(w*0.28, 0, w*0.44, h*0.25, 10, true);
+  // brillance
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.ellipse(w*0.30, h*0.68, 5, 9, 0.6, 0, Math.PI*2);
+  ctx.fill();
   ctx.restore();
 }
 
 function drawRoll(x,y,w,h){
-  ctx.save(); ctx.translate(x+w/2,y+h/2);
-  ctx.fillStyle="#fff";
-  roundRect(-w/2,-h/2,w,h,10,true);
-  ctx.fillStyle="#ccc";
-  ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2); ctx.fill();
+  ctx.save(); ctx.translate(x+w/2, y+h/2);
+
+  // corps
+  ctx.fillStyle="rgba(255,255,255,0.96)";
+  roundRect(-w/2, -h/2, w, h, 10, true);
+
+  // trou
+  ctx.fillStyle="rgba(200,200,200,0.95)";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 8, 7, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // petite feuille
+  ctx.fillStyle="rgba(255,255,255,0.92)";
+  roundRect(w/2 - 6, 5, 18, 12, 6, true);
+
   ctx.restore();
 }
 
-function roundRect(x,y,w,h,r,f){
+function drawCloud(x,y,s){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(s,s);
+  ctx.fillStyle="rgba(255,255,255,0.85)";
+  ctx.beginPath();
+  ctx.arc(0, 0, 18, 0, Math.PI*2);
+  ctx.arc(18, -8, 22, 0, Math.PI*2);
+  ctx.arc(38, 0, 18, 0, Math.PI*2);
+  ctx.arc(18, 10, 20, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function roundRect(x,y,w,h,r,fill){
   ctx.beginPath();
   ctx.moveTo(x+r,y);
   ctx.arcTo(x+w,y,x+w,y+h,r);
@@ -254,19 +357,24 @@ function roundRect(x,y,w,h,r,f){
   ctx.arcTo(x,y+h,x,y,r);
   ctx.arcTo(x,y,x+w,y,r);
   ctx.closePath();
-  if(f) ctx.fill();
+  if(fill) ctx.fill();
 }
 
 // --- LOOP ---
-let last=performance.now();
+let last = performance.now();
 function loop(now){
-  const dt=Math.min((now-last)/1000,0.033);
-  last=now;
+  const dt = Math.min((now-last)/1000, 0.033);
+  last = now;
   update(dt);
   draw();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// sécurité resize
+window.addEventListener("resize", ()=>{
+  player.y = Math.min(player.y, groundY() - player.h);
+});
 </script>
 </body>
 </html>
