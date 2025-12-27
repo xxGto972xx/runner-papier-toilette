@@ -99,7 +99,7 @@ const player = {
 };
 
 // --- ENTITIES ---
-const obstacles = [];
+const obstacles = []; // {x,y,w,h,type:'ground'|'air'}
 const rolls = [];
 
 // --- CONTROLS ultra réactifs ---
@@ -125,11 +125,26 @@ fastPress(document.getElementById("slide"), ()=>{
 
 // --- SPAWN ---
 let spawnTimer = 2.0;
-function spawnObstacle(){
-  obstacles.push({ x:W, y:groundY()-34, w:34, h:34 });
 
+// ✅ Obstacles au sol + obstacles en l’air (à éviter en GLISSE)
+function spawnObstacle(){
+  const air = Math.random() < 0.40; // 40% en l'air
+
+  if(air){
+    // obstacle en l'air : pour t'obliger à glisser dessous
+    const w = 34, h = 28;
+    const y = groundY() - 92; // hauteur “tête/torse”
+    obstacles.push({ x: W, y, w, h, type: "air" });
+  } else {
+    // obstacle au sol : à éviter en saut
+    const w = 34, h = 34;
+    const y = groundY() - h;
+    obstacles.push({ x: W, y, w, h, type: "ground" });
+  }
+
+  // collectibles (rouleau) : plutôt en l'air pour encourager le saut
   if(Math.random() < 0.65){
-    rolls.push({ x:W+160, y:groundY()-130, w:34, h:34 });
+    rolls.push({ x: W + 160, y: groundY() - 140, w: 34, h: 34 });
   }
 }
 
@@ -167,10 +182,11 @@ function update(dt){
   obstacles.forEach(o => o.x -= speed * dt);
   rolls.forEach(r => r.x -= speed * dt);
 
-  // collisions (hitbox adaptée au slide)
+  // hitbox adaptée au slide
   const pTop = player.sliding ? (groundY() - 34) : player.y;
   const pH   = player.sliding ? 34 : player.h;
 
+  // collisions obstacle
   obstacles.forEach(o=>{
     if(o.x < player.x + player.w &&
        o.x + o.w > player.x &&
@@ -181,6 +197,7 @@ function update(dt){
     }
   });
 
+  // collisions rouleaux
   rolls.forEach((r,i)=>{
     if(r.x < player.x + player.w &&
        r.x + r.w > player.x &&
@@ -191,6 +208,10 @@ function update(dt){
       document.getElementById("score").textContent = "Rouleaux: " + score;
     }
   });
+
+  // nettoyage hors écran
+  while(obstacles.length && obstacles[0].x + obstacles[0].w < -50) obstacles.shift();
+  while(rolls.length && rolls[0].x + rolls[0].w < -50) rolls.shift();
 }
 
 // --- DRAW ---
@@ -213,8 +234,22 @@ function draw(){
   ctx.fillStyle="#49c880";
   ctx.fillRect(0, groundY(), W, H - groundY());
 
-  // entités
-  obstacles.forEach(o=>drawPoop(o.x,o.y,o.w,o.h));
+  // obstacles
+  obstacles.forEach(o=>{
+    // petit repère visuel : ceux en l’air ont une “aura” légère
+    if(o.type === "air"){
+      ctx.save();
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.ellipse(o.x + o.w/2, o.y + o.h/2, o.w*0.75, o.h*0.75, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+    drawPoop(o.x,o.y,o.w,o.h);
+  });
+
+  // rouleaux
   rolls.forEach(r=>drawRoll(r.x,r.y,r.w,r.h));
 
   // joueur
@@ -233,7 +268,6 @@ function drawRunner(x, y, sliding){
   const now = performance.now();
   const step = Math.sin(now/110) * (sliding ? 1 : 6);
 
-  // tailles
   const bodyW = sliding ? 58 : 44;
   const bodyH = sliding ? 34 : 70;
 
@@ -253,15 +287,14 @@ function drawRunner(x, y, sliding){
     ctx.beginPath(); ctx.moveTo(16, bodyH-6); ctx.lineTo(10-step, bodyH+10); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(28, bodyH-6); ctx.lineTo(34+step, bodyH+10); ctx.stroke();
   } else {
-    // en slide : petite ligne "jambe"
     ctx.beginPath(); ctx.moveTo(16, bodyH-2); ctx.lineTo(40, bodyH-2); ctx.stroke();
   }
 
-  // corps (t-shirt)
+  // corps
   ctx.fillStyle = "#1e88e5";
   roundRect(10, 24, bodyW-20, bodyH-30, 12, true);
 
-  // tête (plus grande et visible)
+  // tête
   ctx.fillStyle = "#ffe0bd";
   ctx.beginPath();
   ctx.arc(bodyW/2, 16, 12, 0, Math.PI*2);
@@ -318,17 +351,14 @@ function drawPoop(x,y,w,h){
 function drawRoll(x,y,w,h){
   ctx.save(); ctx.translate(x+w/2, y+h/2);
 
-  // corps
   ctx.fillStyle="rgba(255,255,255,0.96)";
   roundRect(-w/2, -h/2, w, h, 10, true);
 
-  // trou
   ctx.fillStyle="rgba(200,200,200,0.95)";
   ctx.beginPath();
   ctx.ellipse(0, 0, 8, 7, 0, 0, Math.PI*2);
   ctx.fill();
 
-  // petite feuille
   ctx.fillStyle="rgba(255,255,255,0.92)";
   roundRect(w/2 - 6, 5, 18, 12, 6, true);
 
@@ -378,3 +408,4 @@ window.addEventListener("resize", ()=>{
 </script>
 </body>
 </html>
+```0
