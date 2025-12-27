@@ -27,9 +27,9 @@ html,body{
 }
 
 .hud-box{
-  background:rgba(255,255,255,0.7);
-  padding:6px 10px;
-  border-radius:12px;
+  background:rgba(255,255,255,0.75);
+  padding:6px 12px;
+  border-radius:14px;
 }
 
 canvas{
@@ -51,7 +51,6 @@ button{
   color:white;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  cursor: pointer;
 }
 
 #jump{ background:#34a853; }
@@ -86,15 +85,12 @@ function resize(){
 resize();
 window.addEventListener("resize", resize);
 
-// ✅ Sol recalculé dynamiquement (corrige le "rien ne se passe" sur mobile)
-function groundY(){
-  return H * 0.75;
-}
+function groundY(){ return H * 0.75; }
 
-// --- GAME VARIABLES ---
+// --- GAME ---
 let gameTime = 0;
-let speed = 200;
 let speedMult = 1;
+let speed = 200;
 let score = 0;
 
 // --- PLAYER ---
@@ -113,7 +109,7 @@ const player = {
 const obstacles = [];
 const rolls = [];
 
-// --- CONTROLS (ultra réactif mobile) ---
+// --- CONTROLS ---
 function fastPress(btn, fn){
   btn.addEventListener("pointerdown", e => { e.preventDefault(); fn(); }, {passive:false});
   btn.addEventListener("touchstart", e => { e.preventDefault(); fn(); }, {passive:false});
@@ -136,35 +132,20 @@ fastPress(document.getElementById("slide"), ()=>{
 
 // --- SPAWN ---
 let spawnTimer = 1.8;
-
 function spawnObstacle(){
-  obstacles.push({
-    x: W,
-    y: groundY() - 30,
-    w: 30,
-    h: 30
-  });
-
-  if(Math.random() < 0.6){
-    rolls.push({
-      x: W + 150,
-      y: groundY() - 120,
-      w: 30,
-      h: 30
-    });
+  obstacles.push({ x:W, y:groundY()-30, w:30, h:30 });
+  if(Math.random()<0.6){
+    rolls.push({ x:W+150, y:groundY()-120, w:30, h:30 });
   }
 }
 
 // --- UPDATE ---
 function update(dt){
   gameTime += dt;
-
-  // difficulty progression (démarre facile, monte progressivement)
   speedMult = 1 + gameTime * 0.05;
   speed = 200 * speedMult;
   document.getElementById("speed").textContent = "Vitesse: " + speedMult.toFixed(1) + "x";
 
-  // gravity
   player.vy += 2200 * dt;
   player.y += player.vy * dt;
 
@@ -176,35 +157,33 @@ function update(dt){
 
   if(player.sliding){
     player.slideTime -= dt;
-    if(player.slideTime <= 0) player.sliding = false;
+    if(player.slideTime<=0) player.sliding=false;
   }
 
-  // spawn (plus lent au début, plus rapide ensuite)
   spawnTimer -= dt;
-  if(spawnTimer <= 0){
+  if(spawnTimer<=0){
     spawnObstacle();
     spawnTimer = Math.max(0.8, 1.8 - gameTime * 0.05);
   }
 
-  obstacles.forEach(o => o.x -= speed * dt);
-  rolls.forEach(r => r.x -= speed * dt);
+  obstacles.forEach(o=>o.x -= speed*dt);
+  rolls.forEach(r=>r.x -= speed*dt);
 
-  // collisions
   obstacles.forEach(o=>{
-    if(o.x < player.x + player.w &&
-       o.x + o.w > player.x &&
-       o.y < player.y + (player.sliding ? 30 : player.h) &&
-       o.y + o.h > (player.sliding ? groundY()-30 : player.y)){
+    if(o.x < player.x+player.w &&
+       o.x+o.w > player.x &&
+       o.y < player.y + (player.sliding?30:player.h) &&
+       o.y+o.h > (player.sliding?groundY()-30:player.y)){
       alert("Perdu !");
       location.reload();
     }
   });
 
   rolls.forEach((r,i)=>{
-    if(r.x < player.x + player.w &&
-       r.x + r.w > player.x &&
-       r.y < player.y + (player.sliding ? 30 : player.h) &&
-       r.y + r.h > (player.sliding ? groundY()-30 : player.y)){
+    if(r.x < player.x+player.w &&
+       r.x+r.w > player.x &&
+       r.y < player.y+player.h &&
+       r.y+r.h > player.y){
       rolls.splice(i,1);
       score++;
       document.getElementById("score").textContent = "Rouleaux: " + score;
@@ -216,53 +195,78 @@ function update(dt){
 function draw(){
   ctx.clearRect(0,0,W,H);
 
-  // background sky
-  const grad = ctx.createLinearGradient(0,0,0,H);
-  grad.addColorStop(0,"#6ec6ff");
-  grad.addColorStop(1,"#dff6ff");
-  ctx.fillStyle = grad;
+  const sky = ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,"#6ec6ff");
+  sky.addColorStop(1,"#eaf8ff");
+  ctx.fillStyle=sky;
   ctx.fillRect(0,0,W,H);
 
-  // ground
-  ctx.fillStyle="#4caf50";
-  ctx.fillRect(0, groundY(), W, H - groundY());
+  ctx.fillStyle="#49c880";
+  ctx.fillRect(0,groundY(),W,H-groundY());
 
-  // player (un seul bonhomme)
+  obstacles.forEach(o=>drawPoop(o.x,o.y,o.w,o.h));
+  rolls.forEach(r=>drawRoll(r.x,r.y,r.w,r.h));
+
+  drawRunner(player.x, player.sliding?groundY()-48:player.y, player.sliding);
+}
+
+// --- DRAW HELPERS ---
+function drawRunner(x,y,sliding){
+  ctx.save(); ctx.translate(x,y);
+  const h=sliding?48:60,w=sliding?56:40;
+  const t=performance.now()/120;
   ctx.fillStyle="#1e88e5";
-  ctx.fillRect(
-    player.x,
-    player.sliding ? groundY()-30 : player.y,
-    player.w,
-    player.sliding ? 30 : player.h
-  );
+  roundRect(8,18,w-16,h-22,10,true);
+  ctx.fillStyle="#ffe0bd";
+  ctx.beginPath(); ctx.arc(w/2,14,10,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle="rgba(0,0,0,.6)";
+  ctx.lineWidth=3;
+  if(!sliding){
+    ctx.beginPath(); ctx.moveTo(14,h-8); ctx.lineTo(10-Math.sin(t)*6,h+8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(26,h-8); ctx.show?null:ctx.lineTo(30+Math.sin(t)*6,h+8); ctx.stroke();
+  }
+  ctx.restore();
+}
 
-  // obstacles
-  ctx.fillStyle="#6d4c41";
-  obstacles.forEach(o=>ctx.fillRect(o.x,o.y,o.w,o.h));
+function drawPoop(x,y,w,h){
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle="#7a4a21";
+  roundRect(0,h*0.45,w,h*0.55,10,true);
+  roundRect(w*0.15,h*0.2,w*0.7,h*0.35,10,true);
+  roundRect(w*0.3,0,w*0.4,h*0.25,10,true);
+  ctx.restore();
+}
 
-  // rolls
+function drawRoll(x,y,w,h){
+  ctx.save(); ctx.translate(x+w/2,y+h/2);
   ctx.fillStyle="#fff";
-  rolls.forEach(r=>ctx.fillRect(r.x,r.y,r.w,r.h));
+  roundRect(-w/2,-h/2,w,h,10,true);
+  ctx.fillStyle="#ccc";
+  ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function roundRect(x,y,w,h,r,f){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+  if(f) ctx.fill();
 }
 
 // --- LOOP ---
-let last = performance.now();
+let last=performance.now();
 function loop(now){
-  const dt = Math.min((now-last)/1000,0.033);
-  last = now;
-
+  const dt=Math.min((now-last)/1000,0.033);
+  last=now;
   update(dt);
   draw();
   requestAnimationFrame(loop);
 }
-
-// ✅ sécurité : remet le joueur au bon endroit si la taille change
-window.addEventListener("resize", ()=>{
-  player.y = Math.min(player.y, groundY() - player.h);
-});
-
 requestAnimationFrame(loop);
 </script>
 </body>
 </html>
-```0
