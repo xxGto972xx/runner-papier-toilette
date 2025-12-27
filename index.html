@@ -45,6 +45,8 @@ button{
   color:white;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  user-select:none;
+  -webkit-user-select:none;
 }
 #jump{ background:#34a853; }
 #slide{ background:#f29900; }
@@ -77,7 +79,7 @@ function resize(){
 resize();
 window.addEventListener("resize", resize);
 
-// Sol dynamique (fix mobile)
+// Sol dynamique
 function groundY(){ return H * 0.75; }
 
 // --- GAME ---
@@ -102,49 +104,85 @@ const player = {
 const obstacles = []; // {x,y,w,h,type:'ground'|'air'}
 const rolls = [];
 
-// --- CONTROLS ultra réactifs ---
-function fastPress(btn, fn){
-  btn.addEventListener("pointerdown", e => { e.preventDefault(); fn(); }, {passive:false});
-  btn.addEventListener("touchstart", e => { e.preventDefault(); fn(); }, {passive:false});
+// --- CONTROLS helpers ---
+function onPress(btn, startFn, endFn){
+  // pointer events
+  btn.addEventListener("pointerdown", e => { e.preventDefault(); startFn(e); }, {passive:false});
+  btn.addEventListener("pointerup",   e => { e.preventDefault(); endFn(e); },   {passive:false});
+  btn.addEventListener("pointercancel", e => { e.preventDefault(); endFn(e); }, {passive:false});
+
+  // fallback touch
+  btn.addEventListener("touchstart", e => { e.preventDefault(); startFn(e); }, {passive:false});
+  btn.addEventListener("touchend",   e => { e.preventDefault(); endFn(e); },   {passive:false});
+  btn.addEventListener("touchcancel", e => { e.preventDefault(); endFn(e); },  {passive:false});
 }
 
-fastPress(document.getElementById("jump"), ()=>{
-  if(player.onGround){
-    player.vy = -980;
-    player.onGround = false;
-    player.sliding = false;
-  }
-});
+// --- VARIABLE JUMP (press duration) ---
+let jumpHolding = false;
+let jumpHoldStart = 0;
 
-fastPress(document.getElementById("slide"), ()=>{
+// réglages saut variable
+const JUMP_MIN_VEL = 720;   // petit saut (appui bref)
+const JUMP_MAX_VEL = 1150;  // grand saut (appui long)
+const JUMP_MAX_HOLD = 0.35; // secondes pour atteindre le saut max
+
+const jumpBtn = document.getElementById("jump");
+const slideBtn = document.getElementById("slide");
+
+onPress(
+  jumpBtn,
+  () => {
+    // start hold
+    if(player.onGround){
+      jumpHolding = true;
+      jumpHoldStart = performance.now();
+    }
+  },
+  () => {
+    // release -> jump strength depends on hold duration
+    if(player.onGround && jumpHolding){
+      const held = Math.min((performance.now() - jumpHoldStart) / 1000, JUMP_MAX_HOLD);
+      const t = held / JUMP_MAX_HOLD; // 0..1
+      const vel = JUMP_MIN_VEL + (JUMP_MAX_VEL - JUMP_MIN_VEL) * t;
+
+      player.vy = -vel;
+      player.onGround = false;
+      player.sliding = false;
+    }
+    jumpHolding = false;
+  }
+);
+
+// --- SLIDE ---
+function doSlide(){
   if(player.onGround && !player.sliding){
     player.sliding = true;
     player.slideTime = 0.55;
   }
-});
+}
+
+slideBtn.addEventListener("pointerdown", e => { e.preventDefault(); doSlide(); }, {passive:false});
+slideBtn.addEventListener("touchstart",  e => { e.preventDefault(); doSlide(); }, {passive:false});
 
 // --- SPAWN ---
 let spawnTimer = 2.0;
 
-// ✅ Obstacles au sol + obstacles en l’air (à éviter en GLISSE)
 function spawnObstacle(){
   const air = Math.random() < 0.40; // 40% en l'air
 
   if(air){
-    // obstacle en l'air : pour t'obliger à glisser dessous
     const w = 34, h = 28;
-    const y = groundY() - 92; // hauteur “tête/torse”
+    const y = groundY() - 92; // obstacle en l'air -> glisser dessous
     obstacles.push({ x: W, y, w, h, type: "air" });
   } else {
-    // obstacle au sol : à éviter en saut
     const w = 34, h = 34;
-    const y = groundY() - h;
+    const y = groundY() - h; // obstacle au sol -> sauter
     obstacles.push({ x: W, y, w, h, type: "ground" });
   }
 
-  // collectibles (rouleau) : plutôt en l'air pour encourager le saut
+  // rouleaux un peu plus haut pour encourager le saut
   if(Math.random() < 0.65){
-    rolls.push({ x: W + 160, y: groundY() - 140, w: 34, h: 34 });
+    rolls.push({ x: W + 160, y: groundY() - 150, w: 34, h: 34 });
   }
 }
 
@@ -152,7 +190,7 @@ function spawnObstacle(){
 function update(dt){
   gameTime += dt;
 
-  // difficulté progressive (début plus facile)
+  // difficulté progressive
   speedMult = 1 + gameTime * 0.04;
   speed = 190 * speedMult;
   document.getElementById("speed").textContent = "Vitesse: " + speedMult.toFixed(1) + "x";
@@ -182,7 +220,7 @@ function update(dt){
   obstacles.forEach(o => o.x -= speed * dt);
   rolls.forEach(r => r.x -= speed * dt);
 
-  // hitbox adaptée au slide
+  // hitbox (slide)
   const pTop = player.sliding ? (groundY() - 34) : player.y;
   const pH   = player.sliding ? 34 : player.h;
 
@@ -209,7 +247,7 @@ function update(dt){
     }
   });
 
-  // nettoyage hors écran
+  // nettoyage
   while(obstacles.length && obstacles[0].x + obstacles[0].w < -50) obstacles.shift();
   while(rolls.length && rolls[0].x + rolls[0].w < -50) rolls.shift();
 }
@@ -225,7 +263,7 @@ function draw(){
   ctx.fillStyle = sky;
   ctx.fillRect(0,0,W,H);
 
-  // nuages simples
+  // nuages
   drawCloud(W*0.15, H*0.12, 1.0);
   drawCloud(W*0.55, H*0.18, 1.25);
   drawCloud(W*0.82, H*0.10, 0.9);
@@ -236,7 +274,6 @@ function draw(){
 
   // obstacles
   obstacles.forEach(o=>{
-    // petit repère visuel : ceux en l’air ont une “aura” légère
     if(o.type === "air"){
       ctx.save();
       ctx.globalAlpha = 0.15;
@@ -258,6 +295,21 @@ function draw(){
     player.sliding ? (groundY()-34) : player.y,
     player.sliding
   );
+
+  // petit indicateur visuel pendant le hold (optionnel mais utile)
+  if(jumpHolding && player.onGround){
+    const held = Math.min((performance.now() - jumpHoldStart) / 1000, JUMP_MAX_HOLD);
+    const t = held / JUMP_MAX_HOLD;
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    roundRect(player.x-10, groundY()-100, 70, 10, 6, true);
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    roundRect(player.x-10, groundY()-100, 70, 10, 6, true);
+    ctx.fillStyle = "rgba(52,168,83,0.95)";
+    roundRect(player.x-10, groundY()-100, 70*t, 10, 6, true);
+    ctx.restore();
+  }
 }
 
 // --- DRAW HELPERS ---
@@ -333,13 +385,9 @@ function drawRunner(x, y, sliding){
 function drawPoop(x,y,w,h){
   ctx.save(); ctx.translate(x,y);
   ctx.fillStyle="#7a4a21";
-  // base
   roundRect(0, h*0.45, w, h*0.55, 10, true);
-  // mid
   roundRect(w*0.14, h*0.2, w*0.72, h*0.35, 10, true);
-  // top
   roundRect(w*0.28, 0, w*0.44, h*0.25, 10, true);
-  // brillance
   ctx.globalAlpha = 0.2;
   ctx.fillStyle = "#fff";
   ctx.beginPath();
@@ -350,18 +398,14 @@ function drawPoop(x,y,w,h){
 
 function drawRoll(x,y,w,h){
   ctx.save(); ctx.translate(x+w/2, y+h/2);
-
   ctx.fillStyle="rgba(255,255,255,0.96)";
   roundRect(-w/2, -h/2, w, h, 10, true);
-
   ctx.fillStyle="rgba(200,200,200,0.95)";
   ctx.beginPath();
   ctx.ellipse(0, 0, 8, 7, 0, 0, Math.PI*2);
   ctx.fill();
-
   ctx.fillStyle="rgba(255,255,255,0.92)";
   roundRect(w/2 - 6, 5, 18, 12, 6, true);
-
   ctx.restore();
 }
 
