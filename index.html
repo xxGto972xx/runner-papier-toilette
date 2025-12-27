@@ -96,53 +96,48 @@ const player = {
   h: 70,
   vy: 0,
   onGround: true,
-  sliding: false,
-  slideTime: 0
+  sliding: false
 };
 
 // --- ENTITIES ---
 const obstacles = []; // {x,y,w,h,type:'ground'|'air'}
 const rolls = [];
 
-// --- CONTROLS helpers ---
+// --- INPUT HELPERS ---
 function onPress(btn, startFn, endFn){
-  // pointer events
   btn.addEventListener("pointerdown", e => { e.preventDefault(); startFn(e); }, {passive:false});
-  btn.addEventListener("pointerup",   e => { e.preventDefault(); endFn(e); },   {passive:false});
+  btn.addEventListener("pointerup", e => { e.preventDefault(); endFn(e); }, {passive:false});
   btn.addEventListener("pointercancel", e => { e.preventDefault(); endFn(e); }, {passive:false});
 
-  // fallback touch
   btn.addEventListener("touchstart", e => { e.preventDefault(); startFn(e); }, {passive:false});
-  btn.addEventListener("touchend",   e => { e.preventDefault(); endFn(e); },   {passive:false});
-  btn.addEventListener("touchcancel", e => { e.preventDefault(); endFn(e); },  {passive:false});
+  btn.addEventListener("touchend", e => { e.preventDefault(); endFn(e); }, {passive:false});
+  btn.addEventListener("touchcancel", e => { e.preventDefault(); endFn(e); }, {passive:false});
 }
 
 // --- VARIABLE JUMP (press duration) ---
 let jumpHolding = false;
 let jumpHoldStart = 0;
 
-// réglages saut variable
-const JUMP_MIN_VEL = 720;   // petit saut (appui bref)
-const JUMP_MAX_VEL = 1150;  // grand saut (appui long)
-const JUMP_MAX_HOLD = 0.35; // secondes pour atteindre le saut max
+const JUMP_MIN_VEL = 720;
+const JUMP_MAX_VEL = 1150;
+const JUMP_MAX_HOLD = 0.35;
 
 const jumpBtn = document.getElementById("jump");
 const slideBtn = document.getElementById("slide");
 
+// ✅ SAUT : appui bref = petit saut, appui long = grand saut
 onPress(
   jumpBtn,
   () => {
-    // start hold
     if(player.onGround){
       jumpHolding = true;
       jumpHoldStart = performance.now();
     }
   },
   () => {
-    // release -> jump strength depends on hold duration
     if(player.onGround && jumpHolding){
       const held = Math.min((performance.now() - jumpHoldStart) / 1000, JUMP_MAX_HOLD);
-      const t = held / JUMP_MAX_HOLD; // 0..1
+      const t = held / JUMP_MAX_HOLD;
       const vel = JUMP_MIN_VEL + (JUMP_MAX_VEL - JUMP_MIN_VEL) * t;
 
       player.vy = -vel;
@@ -153,16 +148,24 @@ onPress(
   }
 );
 
-// --- SLIDE ---
-function doSlide(){
-  if(player.onGround && !player.sliding){
-    player.sliding = true;
-    player.slideTime = 0.55;
-  }
-}
+// ✅ GLISSE : tant qu'on reste appuyé, le bonhomme reste baissé
+let slideHolding = false;
 
-slideBtn.addEventListener("pointerdown", e => { e.preventDefault(); doSlide(); }, {passive:false});
-slideBtn.addEventListener("touchstart",  e => { e.preventDefault(); doSlide(); }, {passive:false});
+onPress(
+  slideBtn,
+  () => {
+    // start slide hold
+    if(player.onGround){
+      slideHolding = true;
+      player.sliding = true;
+    }
+  },
+  () => {
+    // release slide
+    slideHolding = false;
+    player.sliding = false;
+  }
+);
 
 // --- SPAWN ---
 let spawnTimer = 2.0;
@@ -180,7 +183,6 @@ function spawnObstacle(){
     obstacles.push({ x: W, y, w, h, type: "ground" });
   }
 
-  // rouleaux un peu plus haut pour encourager le saut
   if(Math.random() < 0.65){
     rolls.push({ x: W + 160, y: groundY() - 150, w: 34, h: 34 });
   }
@@ -195,7 +197,7 @@ function update(dt){
   speed = 190 * speedMult;
   document.getElementById("speed").textContent = "Vitesse: " + speedMult.toFixed(1) + "x";
 
-  // physique
+  // physique (gravité)
   player.vy += 2350 * dt;
   player.y += player.vy * dt;
 
@@ -205,9 +207,13 @@ function update(dt){
     player.onGround = true;
   }
 
-  if(player.sliding){
-    player.slideTime -= dt;
-    if(player.slideTime <= 0) player.sliding = false;
+  // si on n'est plus au sol, on ne peut pas rester en slide
+  if(!player.onGround){
+    player.sliding = false;
+    slideHolding = false;
+  } else {
+    // si on est au sol et qu'on maintient glisse => reste baissé
+    if(slideHolding) player.sliding = true;
   }
 
   // spawn progressif
@@ -220,7 +226,7 @@ function update(dt){
   obstacles.forEach(o => o.x -= speed * dt);
   rolls.forEach(r => r.x -= speed * dt);
 
-  // hitbox (slide)
+  // hitbox adaptée au slide
   const pTop = player.sliding ? (groundY() - 34) : player.y;
   const pH   = player.sliding ? 34 : player.h;
 
@@ -256,23 +262,19 @@ function update(dt){
 function draw(){
   ctx.clearRect(0,0,W,H);
 
-  // ciel
   const sky = ctx.createLinearGradient(0,0,0,H);
   sky.addColorStop(0,"#6ec6ff");
   sky.addColorStop(1,"#eaf8ff");
   ctx.fillStyle = sky;
   ctx.fillRect(0,0,W,H);
 
-  // nuages
   drawCloud(W*0.15, H*0.12, 1.0);
   drawCloud(W*0.55, H*0.18, 1.25);
   drawCloud(W*0.82, H*0.10, 0.9);
 
-  // sol
   ctx.fillStyle="#49c880";
   ctx.fillRect(0, groundY(), W, H - groundY());
 
-  // obstacles
   obstacles.forEach(o=>{
     if(o.type === "air"){
       ctx.save();
@@ -286,28 +288,24 @@ function draw(){
     drawPoop(o.x,o.y,o.w,o.h);
   });
 
-  // rouleaux
   rolls.forEach(r=>drawRoll(r.x,r.y,r.w,r.h));
 
-  // joueur
   drawRunner(
     player.x,
     player.sliding ? (groundY()-34) : player.y,
     player.sliding
   );
 
-  // petit indicateur visuel pendant le hold (optionnel mais utile)
+  // indicateur de charge du saut (optionnel)
   if(jumpHolding && player.onGround){
     const held = Math.min((performance.now() - jumpHoldStart) / 1000, JUMP_MAX_HOLD);
     const t = held / JUMP_MAX_HOLD;
     ctx.save();
     ctx.globalAlpha = 0.85;
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    roundRect(player.x-10, groundY()-100, 70, 10, 6, true);
     ctx.fillStyle = "rgba(0,0,0,0.15)";
-    roundRect(player.x-10, groundY()-100, 70, 10, 6, true);
+    roundRect(player.x-10, groundY()-105, 70, 10, 6, true);
     ctx.fillStyle = "rgba(52,168,83,0.95)";
-    roundRect(player.x-10, groundY()-100, 70*t, 10, 6, true);
+    roundRect(player.x-10, groundY()-105, 70*t, 10, 6, true);
     ctx.restore();
   }
 }
@@ -323,7 +321,6 @@ function drawRunner(x, y, sliding){
   const bodyW = sliding ? 58 : 44;
   const bodyH = sliding ? 34 : 70;
 
-  // ombre
   ctx.globalAlpha = 0.18;
   ctx.fillStyle = "#000";
   ctx.beginPath();
@@ -331,7 +328,6 @@ function drawRunner(x, y, sliding){
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // jambes
   ctx.strokeStyle = "rgba(20,20,20,.75)";
   ctx.lineWidth = 4;
   ctx.lineCap = "round";
@@ -342,35 +338,29 @@ function drawRunner(x, y, sliding){
     ctx.beginPath(); ctx.moveTo(16, bodyH-2); ctx.lineTo(40, bodyH-2); ctx.stroke();
   }
 
-  // corps
   ctx.fillStyle = "#1e88e5";
   roundRect(10, 24, bodyW-20, bodyH-30, 12, true);
 
-  // tête
   ctx.fillStyle = "#ffe0bd";
   ctx.beginPath();
   ctx.arc(bodyW/2, 16, 12, 0, Math.PI*2);
   ctx.fill();
 
-  // cheveux
   ctx.fillStyle = "rgba(35,35,35,.9)";
   ctx.beginPath();
   ctx.arc(bodyW/2, 15, 12, Math.PI, 0);
   ctx.fill();
 
-  // yeux
   ctx.fillStyle = "rgba(0,0,0,.7)";
   ctx.beginPath(); ctx.arc(bodyW/2 - 5, 16, 1.7, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(bodyW/2 + 5, 16, 1.7, 0, Math.PI*2); ctx.fill();
 
-  // bouche
   ctx.strokeStyle = "rgba(0,0,0,.35)";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(bodyW/2, 20, 5, 0.1*Math.PI, 0.9*Math.PI);
   ctx.stroke();
 
-  // bras
   if(!sliding){
     const arm = Math.cos(now/120) * 5;
     ctx.strokeStyle = "rgba(20,20,20,.75)";
