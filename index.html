@@ -72,6 +72,11 @@
       font-weight: 800;
       color:#fff;
       letter-spacing: .5px;
+
+      /* ✅ améliorations réactivité mobile */
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
     }
     #jump{ background: #34a853; }
     #slide{ background: #f29900; }
@@ -314,8 +319,21 @@
       }
     }
 
-    jumpBtn.addEventListener("click", doJump);
-    slideBtn.addEventListener("click", doSlide);
+    // ✅ Réactivité mobile : pointerdown + touchstart (sans délai)
+    function fastPress(btn, fn){
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        fn();
+      }, { passive: false });
+
+      // sécurité pour certains appareils
+      btn.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        fn();
+      }, { passive: false });
+    }
+    fastPress(jumpBtn, doJump);
+    fastPress(slideBtn, doSlide);
 
     // Also support keyboard for testing on PC
     window.addEventListener("keydown", (e)=>{
@@ -720,7 +738,7 @@
     function render(){
       ctx.clearRect(0,0,W,H);
 
-      // sky gradient already via CSS background, but draw subtle sun glow
+      // sky glow
       ctx.save();
       ctx.globalAlpha = 0.25;
       ctx.fillStyle = "#fff";
@@ -732,7 +750,7 @@
       // clouds
       for(const c of clouds) drawCloud(c);
 
-      // far hills
+      // hills
       for(const h of hills) drawHill(h);
 
       // ground
@@ -747,7 +765,6 @@
       // player
       drawPlayer();
 
-      // little hint when paused
       if(!running){
         ctx.save();
         ctx.globalAlpha = 0.18;
@@ -758,27 +775,4 @@
     }
 
     function loop(now){
-      const dt = clamp((now - tPrev) / 1000, 0, 0.033); // cap dt
-      tPrev = now;
-
-      if(running){
-        update(dt);
-      }
-      render();
-      requestAnimationFrame(loop);
-    }
-
-    // ====== Start ======
-    function start(){
-      // position player
-      player.x = W*PLAYER_X_FRAC;
-      player.y = H*GROUND_FRAC - player.h;
-
-      initBackground();
-      requestAnimationFrame(loop);
-    }
-
-    start();
-  </script>
-</body>
-</html>
+      const dt = clamp((now - tPrev) / 1000
