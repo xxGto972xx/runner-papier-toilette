@@ -1,58 +1,784 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Runner Papier Toilette</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <style>
-    body {
-      margin: 0;
-      background: linear-gradient(#6ec6ff, #ffffff);
-      font-family: Arial, sans-serif;
-      overflow: hidden;
+    :root { --ui-h: 20vh; }
+    html, body { height: 100%; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:#87CEEB;
+      overflow:hidden;
+      touch-action: manipulation;
     }
 
-    #game {
-      width: 100vw;
-      height: 80vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
+    #wrap{
+      height:100%;
+      display:flex;
+      flex-direction:column;
     }
 
-    #controls {
-      height: 20vh;
-      display: flex;
+    #hud{
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      pointer-events:none;
+      z-index: 5;
+      text-shadow: 0 2px 10px rgba(0,0,0,.2);
+      color:#0b1b2b;
+      font-weight:700;
+    }
+    #hud .pill{
+      pointer-events:none;
+      background: rgba(255,255,255,.6);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,.7);
+      border-radius: 14px;
+      padding: 8px 12px;
+      font-size: 14px;
     }
 
-    button {
+    #gameArea{
+      height: calc(100vh - var(--ui-h));
+      position:relative;
+      flex: 1 1 auto;
+    }
+
+    canvas{
+      width:100%;
+      height:100%;
+      display:block;
+      background: linear-gradient(#6ec6ff, #dff6ff);
+    }
+
+    #controls{
+      height: var(--ui-h);
+      display:flex;
+      gap:0;
+      user-select:none;
+      -webkit-user-select:none;
+    }
+    button{
       flex: 1;
+      border:none;
       font-size: 24px;
-      border: none;
-      color: white;
+      font-weight: 800;
+      color:#fff;
+      letter-spacing: .5px;
     }
+    #jump{ background: #34a853; }
+    #slide{ background: #f29900; }
+    button:active{ filter: brightness(.9); }
 
-    #jump {
-      background-color: #4caf50;
+    #overlay{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex-direction:column;
+      gap:10px;
+      background: rgba(0,0,0,.35);
+      color:#fff;
+      text-align:center;
+      padding: 24px;
+      opacity:0;
+      pointer-events:none;
+      transition: opacity .2s ease;
+      z-index: 6;
     }
-
-    #slide {
-      background-color: #ff9800;
+    #overlay.show{
+      opacity:1;
+      pointer-events:auto;
     }
+    #overlay h1{
+      margin:0;
+      font-size: 26px;
+    }
+    #overlay p{
+      margin:0;
+      opacity:.95;
+    }
+    #overlay .btn{
+      margin-top: 10px;
+      background: rgba(255,255,255,.92);
+      color:#111;
+      border:none;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-weight: 800;
+      font-size: 16px;
+      width: min(280px, 90vw);
+    }
+    #overlay .btn:active{ filter: brightness(.92); }
   </style>
 </head>
 <body>
+  <div id="wrap">
+    <div id="gameArea">
+      <div id="hud">
+        <div class="pill" id="score">Rouleaux: 0</div>
+        <div class="pill" id="best">Meilleur: 0</div>
+        <div class="pill" id="speed">Vitesse: 1.0x</div>
+      </div>
 
-  <div id="game">
-    🏃‍♂️🏃‍♀️ Le jeu arrive…
+      <canvas id="c"></canvas>
+
+      <div id="overlay">
+        <h1 id="overTitle">Perdu 😅</h1>
+        <p id="overText">Tu as glissé sur une déjection…</p>
+        <button class="btn" id="restartBtn">Rejouer</button>
+      </div>
+    </div>
+
+    <div id="controls">
+      <button id="jump">SAUT</button>
+      <button id="slide">GLISSE</button>
+    </div>
   </div>
 
-  <div id="controls">
-    <button id="jump">SAUT</button>
-    <button id="slide">GLISSE</button>
-  </div>
+  <script>
+    // ====== Canvas setup (retina-safe) ======
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
 
+    function resizeCanvas(){
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0); // draw in CSS pixels
+      W = rect.width;
+      H = rect.height;
+    }
+
+    let W=0, H=0;
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+
+    // ====== UI ======
+    const scoreEl = document.getElementById("score");
+    const bestEl  = document.getElementById("best");
+    const speedEl = document.getElementById("speed");
+    const overlay = document.getElementById("overlay");
+    const restartBtn = document.getElementById("restartBtn");
+
+    let best = Number(localStorage.getItem("runner_best") || 0);
+    bestEl.textContent = "Meilleur: " + best;
+
+    // ====== Game constants ======
+    const GROUND_FRAC = 0.78;       // y position of ground as fraction of height
+    const GRAVITY = 2800;           // px/s^2
+    const JUMP_VEL = 980;           // px/s
+    const SLIDE_TIME = 0.55;        // seconds
+    const PLAYER_X_FRAC = 0.18;     // player x position relative
+    const BASE_SPEED = 330;         // px/s
+    const SPEED_GROWTH = 0.015;     // grows over time
+    const SPAWN_MIN = 0.55;         // seconds
+    const SPAWN_MAX = 1.15;         // seconds
+
+    // ====== Game state ======
+    let tPrev = performance.now();
+    let running = true;
+
+    let gameTime = 0;
+    let speedMul = 1;
+    let worldSpeed = BASE_SPEED;
+
+    let score = 0;
+
+    // Player: "binôme" (two characters)
+    const player = {
+      x: 0,
+      y: 0,
+      vy: 0,
+      w: 52,
+      h: 78,
+      onGround: true,
+      sliding: false,
+      slideLeft: 0
+    };
+
+    // Entities
+    const obstacles = [];  // poop
+    const rolls = [];      // toilet paper
+    const clouds = [];
+    const hills = [];
+    const stars = []; // decorative sparkles near ground
+
+    function rand(min,max){ return Math.random()*(max-min)+min; }
+    function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+    // ====== Background (mario-like vibe without copying) ======
+    function initBackground(){
+      clouds.length = 0;
+      hills.length = 0;
+      stars.length = 0;
+
+      for(let i=0;i<7;i++){
+        clouds.push({
+          x: rand(0, W),
+          y: rand(20, H*0.35),
+          s: rand(0.6, 1.25),
+          sp: rand(12, 26)
+        });
+      }
+      for(let i=0;i<5;i++){
+        hills.push({
+          x: rand(0, W),
+          y: H*GROUND_FRAC + rand(-12, 18),
+          r: rand(120, 220),
+          sp: rand(28, 46)
+        });
+      }
+      for(let i=0;i<14;i++){
+        stars.push({
+          x: rand(0, W),
+          y: H*GROUND_FRAC + rand(8, H*0.18),
+          sp: rand(60, 120),
+          a: rand(0.2, 0.8)
+        });
+      }
+    }
+
+    // ====== Spawn logic ======
+    let spawnTimer = rand(SPAWN_MIN, SPAWN_MAX);
+
+    function spawnObstacle(){
+      // Two types: low poop (jump), high poop (slide)
+      const type = Math.random() < 0.6 ? "low" : "high";
+      const groundY = H*GROUND_FRAC;
+      const o = {
+        kind: "poop",
+        type,
+        w: type === "low" ? 40 : 50,
+        h: type === "low" ? 34 : 64,
+        x: W + 30,
+        y: type === "low" ? (groundY - 34) : (groundY - 118),
+      };
+      obstacles.push(o);
+
+      // 55% chance to also spawn a roll shortly after
+      if(Math.random() < 0.55){
+        spawnRoll(type);
+      }
+    }
+
+    function spawnRoll(typeHint){
+      const groundY = H*GROUND_FRAC;
+      const r = {
+        kind: "roll",
+        w: 34,
+        h: 30,
+        x: W + rand(120, 240),
+        y: groundY - rand(110, 170),
+        taken: false,
+        spin: rand(0, Math.PI*2)
+      };
+
+      // If the last obstacle is "high", offer a roll lower to reward sliding timing sometimes
+      if(typeHint === "high" && Math.random() < 0.5){
+        r.y = groundY - rand(70, 110);
+      }
+      rolls.push(r);
+    }
+
+    // ====== Controls ======
+    const jumpBtn = document.getElementById("jump");
+    const slideBtn = document.getElementById("slide");
+
+    function doJump(){
+      if(!running) return;
+      if(player.onGround){
+        player.vy = -JUMP_VEL;
+        player.onGround = false;
+        if(player.sliding){
+          player.sliding = false;
+          player.slideLeft = 0;
+        }
+      }
+    }
+
+    function doSlide(){
+      if(!running) return;
+      if(player.onGround && !player.sliding){
+        player.sliding = true;
+        player.slideLeft = SLIDE_TIME;
+      }
+    }
+
+    jumpBtn.addEventListener("click", doJump);
+    slideBtn.addEventListener("click", doSlide);
+
+    // Also support keyboard for testing on PC
+    window.addEventListener("keydown", (e)=>{
+      if(e.code === "Space" || e.code === "ArrowUp") doJump();
+      if(e.code === "ArrowDown") doSlide();
+      if(e.code === "Enter" && !running) restart();
+    });
+
+    restartBtn.addEventListener("click", restart);
+
+    // ====== Collision helpers ======
+    function aabb(ax,ay,aw,ah, bx,by,bw,bh){
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+
+    function playerHitbox(){
+      const groundY = H*GROUND_FRAC;
+      const x = player.x;
+      let y = player.y;
+      let w = player.w;
+      let h = player.h;
+
+      if(player.sliding){
+        // lower profile
+        h = 48;
+        y = groundY - h;
+        w = 62;
+      }
+      return {x,y,w,h};
+    }
+
+    // ====== Draw helpers ======
+    function drawCloud(c){
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.translate(c.x, c.y);
+      ctx.scale(c.s, c.s);
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      roundedBlob(0,0, 90, 34);
+      roundedBlob(30,-16, 60, 28);
+      roundedBlob(60,0, 74, 32);
+      ctx.restore();
+    }
+
+    function roundedBlob(x,y,w,h){
+      const r = Math.min(w,h)/2;
+      ctx.beginPath();
+      ctx.roundRect(x,y,w,h,r);
+      ctx.fill();
+    }
+
+    function drawHill(h){
+      ctx.save();
+      ctx.translate(h.x, h.y);
+      ctx.fillStyle = "rgba(73, 200, 128, 0.95)";
+      ctx.beginPath();
+      ctx.arc(0,0,h.r, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      // spots
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = "#0a4";
+      for(let i=0;i<4;i++){
+        const sx = rand(-h.r*0.6, h.r*0.6);
+        const sy = rand(-h.r*0.55, -h.r*0.15);
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, rand(16,28), rand(10,18), rand(0,Math.PI), 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawGround(){
+      const groundY = H*GROUND_FRAC;
+      // grass
+      ctx.fillStyle = "#49c880";
+      ctx.fillRect(0, groundY, W, H - groundY);
+
+      // dirt
+      ctx.fillStyle = "#c78b4a";
+      ctx.fillRect(0, groundY + 18, W, H - (groundY + 18));
+
+      // little tiles / dots
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = "#000";
+      for(const s of stars){
+        ctx.fillRect(s.x, s.y, 2, 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawPlayer(){
+      const groundY = H*GROUND_FRAC;
+      const hb = playerHitbox();
+
+      // Shadow
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = "#000";
+      ctx.beginPath();
+      ctx.ellipse(player.x + 40, groundY + 4, 34, 10, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Two runners (simple cartoon shapes)
+      const baseY = hb.y + hb.h;
+      const bob = Math.sin(gameTime*16) * 2;
+
+      // body 1
+      drawRunner(player.x + 10, baseY - hb.h + bob, player.sliding ? 0.9 : 1, "#2b6cb0", "#ffd166");
+      // body 2
+      drawRunner(player.x + 32, baseY - hb.h + bob + 2, player.sliding ? 0.9 : 1, "#8e44ad", "#ff9f1c");
+
+      // If sliding, add dust
+      if(player.sliding){
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = "#fff";
+        for(let i=0;i<5;i++){
+          ctx.beginPath();
+          ctx.arc(player.x + rand(0,40), groundY - rand(0,6), rand(2,4), 0, Math.PI*2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    function drawRunner(x,y,scale,shirtColor,shoeColor){
+      ctx.save();
+      ctx.translate(x,y);
+      ctx.scale(scale, scale);
+
+      const runningPhase = gameTime*18;
+      const leg = Math.sin(runningPhase) * 8;
+      const arm = Math.cos(runningPhase) * 7;
+
+      // head
+      ctx.fillStyle = "#ffe0bd";
+      ctx.beginPath();
+      ctx.arc(14, 14, 10, 0, Math.PI*2);
+      ctx.fill();
+
+      // hair cap
+      ctx.fillStyle = "rgba(30,30,30,.85)";
+      ctx.beginPath();
+      ctx.arc(14, 12, 10, Math.PI, 0);
+      ctx.fill();
+
+      // torso
+      ctx.fillStyle = shirtColor;
+      ctx.beginPath();
+      ctx.roundRect(6, 24, 16, 20, 6);
+      ctx.fill();
+
+      // legs
+      ctx.strokeStyle = "rgba(20,20,20,.7)";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      // left leg
+      ctx.beginPath();
+      ctx.moveTo(10, 44);
+      ctx.lineTo(10 - leg, 60);
+      ctx.stroke();
+      // right leg
+      ctx.beginPath();
+      ctx.moveTo(18, 44);
+      ctx.lineTo(18 + leg, 60);
+      ctx.stroke();
+
+      // shoes
+      ctx.fillStyle = shoeColor;
+      ctx.beginPath();
+      ctx.roundRect(10 - leg - 8, 58, 14, 6, 3);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(18 + leg - 6, 58, 14, 6, 3);
+      ctx.fill();
+
+      // arms
+      ctx.strokeStyle = "rgba(40,40,40,.6)";
+      ctx.lineWidth = 3;
+      // left arm
+      ctx.beginPath();
+      ctx.moveTo(6, 28);
+      ctx.lineTo(6 - arm, 38);
+      ctx.stroke();
+      // right arm
+      ctx.beginPath();
+      ctx.moveTo(22, 28);
+      ctx.lineTo(22 + arm, 38);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawPoop(o){
+      // Cute-ish poop icon (not too gross)
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      ctx.fillStyle = "#7a4a21";
+      ctx.strokeStyle = "rgba(0,0,0,.18)";
+      ctx.lineWidth = 2;
+
+      const w=o.w, h=o.h;
+      // base
+      ctx.beginPath();
+      ctx.roundRect(0, h*0.45, w, h*0.55, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // mid
+      ctx.beginPath();
+      ctx.roundRect(w*0.12, h*0.2, w*0.76, h*0.35, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // top
+      ctx.beginPath();
+      ctx.roundRect(w*0.28, 0, w*0.44, h*0.25, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // little shine
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.ellipse(w*0.28, h*0.62, 6, 10, 0.5, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawRoll(r){
+      ctx.save();
+      ctx.translate(r.x + r.w/2, r.y + r.h/2);
+      r.spin += 0.08;
+      ctx.rotate(Math.sin(r.spin)*0.15);
+
+      // outer
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.strokeStyle = "rgba(0,0,0,.2)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-r.w/2, -r.h/2, r.w, r.h, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // inner hole
+      ctx.fillStyle = "rgba(210,210,210,0.9)";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8, 7, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // paper tail
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.beginPath();
+      ctx.roundRect(r.w/2 - 6, 6, 18, 12, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // ====== Game over / restart ======
+    function gameOver(reason){
+      running = false;
+      overlay.classList.add("show");
+
+      if(score > best){
+        best = score;
+        localStorage.setItem("runner_best", String(best));
+        bestEl.textContent = "Meilleur: " + best;
+        document.getElementById("overTitle").textContent = "Nouveau record 🎉";
+        document.getElementById("overText").textContent = `Rouleaux: ${score}`;
+      }else{
+        document.getElementById("overTitle").textContent = "Perdu 😅";
+        document.getElementById("overText").textContent = reason + ` (Rouleaux: ${score})`;
+      }
+    }
+
+    function restart(){
+      overlay.classList.remove("show");
+      running = true;
+
+      gameTime = 0;
+      speedMul = 1;
+      worldSpeed = BASE_SPEED;
+
+      score = 0;
+      scoreEl.textContent = "Rouleaux: 0";
+      speedEl.textContent = "Vitesse: 1.0x";
+
+      obstacles.length = 0;
+      rolls.length = 0;
+
+      player.x = W*PLAYER_X_FRAC;
+      player.y = H*GROUND_FRAC - player.h;
+      player.vy = 0;
+      player.onGround = true;
+      player.sliding = false;
+      player.slideLeft = 0;
+
+      spawnTimer = rand(SPAWN_MIN, SPAWN_MAX);
+
+      initBackground();
+      tPrev = performance.now();
+    }
+
+    // ====== Main loop ======
+    function update(dt){
+      gameTime += dt;
+
+      // speed increases slowly over time
+      speedMul = 1 + gameTime*SPEED_GROWTH;
+      worldSpeed = BASE_SPEED * speedMul;
+      speedEl.textContent = "Vitesse: " + speedMul.toFixed(1) + "x";
+
+      const groundY = H*GROUND_FRAC;
+
+      // Move clouds/hills (parallax)
+      for(const c of clouds){
+        c.x -= c.sp * dt;
+        if(c.x < -120) { c.x = W + rand(40,180); c.y = rand(20, H*0.35); c.s = rand(0.6,1.25); c.sp = rand(12,26); }
+      }
+      for(const h of hills){
+        h.x -= h.sp * dt * speedMul * 0.55;
+        if(h.x < -h.r - 20) { h.x = W + rand(80,220); h.r = rand(120,220); h.sp = rand(28,46); h.y = groundY + rand(-12,18); }
+      }
+      for(const s of stars){
+        s.x -= s.sp * dt * speedMul;
+        if(s.x < -10){ s.x = W + rand(20,160); s.y = groundY + rand(8, H*0.18); s.sp = rand(60,120); }
+      }
+
+      // Player physics
+      if(!player.onGround){
+        player.vy += GRAVITY * dt;
+        player.y += player.vy * dt;
+        if(player.y >= groundY - player.h){
+          player.y = groundY - player.h;
+          player.vy = 0;
+          player.onGround = true;
+        }
+      }else{
+        // stay pinned to ground if not jumping
+        player.y = groundY - player.h;
+      }
+
+      // Sliding timer
+      if(player.sliding){
+        player.slideLeft -= dt;
+        if(player.slideLeft <= 0){
+          player.sliding = false;
+          player.slideLeft = 0;
+        }
+      }
+
+      // Spawn
+      spawnTimer -= dt;
+      if(spawnTimer <= 0){
+        spawnObstacle();
+        // next spawn depends on speed (faster = more frequent)
+        const s = clamp(1 / speedMul, 0.55, 1.0);
+        spawnTimer = rand(SPAWN_MIN*s, SPAWN_MAX*s);
+      }
+
+      // Move obstacles/rolls
+      for(const o of obstacles){
+        o.x -= worldSpeed * dt;
+      }
+      for(const r of rolls){
+        r.x -= worldSpeed * dt;
+      }
+
+      // Cleanup
+      while(obstacles.length && obstacles[0].x < -100) obstacles.shift();
+      while(rolls.length && rolls[0].x < -120) rolls.shift();
+
+      // Collisions
+      const hb = playerHitbox();
+
+      for(const o of obstacles){
+        // Poop is always deadly
+        if(aabb(hb.x, hb.y, hb.w, hb.h, o.x, o.y, o.w, o.h)){
+          gameOver("Tu as touché une déjection…");
+          break;
+        }
+      }
+
+      if(running){
+        for(const r of rolls){
+          if(!r.taken && aabb(hb.x, hb.y, hb.w, hb.h, r.x, r.y, r.w, r.h)){
+            r.taken = true;
+            score += 1;
+            scoreEl.textContent = "Rouleaux: " + score;
+          }
+        }
+        // remove taken rolls quickly
+        for(let i=rolls.length-1;i>=0;i--){
+          if(rolls[i].taken) rolls.splice(i,1);
+        }
+      }
+    }
+
+    function render(){
+      ctx.clearRect(0,0,W,H);
+
+      // sky gradient already via CSS background, but draw subtle sun glow
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(W*0.82, H*0.18, 90, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+
+      // clouds
+      for(const c of clouds) drawCloud(c);
+
+      // far hills
+      for(const h of hills) drawHill(h);
+
+      // ground
+      drawGround();
+
+      // obstacles
+      for(const o of obstacles) drawPoop(o);
+
+      // rolls
+      for(const r of rolls) drawRoll(r);
+
+      // player
+      drawPlayer();
+
+      // little hint when paused
+      if(!running){
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0,0,W,H);
+        ctx.restore();
+      }
+    }
+
+    function loop(now){
+      const dt = clamp((now - tPrev) / 1000, 0, 0.033); // cap dt
+      tPrev = now;
+
+      if(running){
+        update(dt);
+      }
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    // ====== Start ======
+    function start(){
+      // position player
+      player.x = W*PLAYER_X_FRAC;
+      player.y = H*GROUND_FRAC - player.h;
+
+      initBackground();
+      requestAnimationFrame(loop);
+    }
+
+    start();
+  </script>
 </body>
-</
+</html>
